@@ -6,7 +6,7 @@ public class ClearMLHealthCheck : IHealthCheck
     public ClearMLHealthCheck(IClearMLService clearMLService, ILoggerFactory loggerFactory)
     {
         _clearMLService = clearMLService;
-        _logger = loggerFactory.CreateLogger<S3HealthCheck>();
+        _logger = loggerFactory.CreateLogger<ClearMLHealthCheck>();
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(
