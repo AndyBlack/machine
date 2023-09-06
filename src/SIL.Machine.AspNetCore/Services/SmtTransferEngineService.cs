@@ -1,7 +1,12 @@
 ﻿namespace SIL.Machine.AspNetCore.Services;
 
-public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransferEngineBuildJob>
+public class SmtTransferEngineService : ITranslationEngineService
 {
+    private readonly IBackgroundJobClient _jobClient;
+    private readonly IDistributedReaderWriterLockFactory _lockFactory;
+    private readonly IPlatformService _platformService;
+    private readonly IDataAccessContext _dataAccessContext;
+    private readonly IRepository<TranslationEngine> _engines;
     private readonly IRepository<TrainSegmentPair> _trainSegmentPairs;
     private readonly SmtTransferEngineStateService _stateService;
 
@@ -14,15 +19,19 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         IRepository<TrainSegmentPair> trainSegmentPairs,
         SmtTransferEngineStateService stateService
     )
-        : base(jobClient, lockFactory, platformService, dataAccessContext, engines)
     {
+        _jobClient = jobClient;
+        _lockFactory = lockFactory;
+        _platformService = platformService;
+        _dataAccessContext = dataAccessContext;
+        _engines = engines;
         _trainSegmentPairs = trainSegmentPairs;
         _stateService = stateService;
     }
 
-    public override TranslationEngineType Type => TranslationEngineType.SmtTransfer;
+    public TranslationEngineType Type => TranslationEngineType.SmtTransfer;
 
-    public override async Task CreateAsync(
+    public async Task CreateAsync(
         string engineId,
         string? engineName,
         string sourceLanguage,
@@ -30,22 +39,34 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         CancellationToken cancellationToken = default
     )
     {
-        await base.CreateAsync(engineId, engineName, sourceLanguage, targetLanguage, cancellationToken);
+        await _engines.InsertAsync(
+            new TranslationEngine
+            {
+                EngineId = engineId,
+                SourceLanguage = sourceLanguage,
+                TargetLanguage = targetLanguage
+            },
+            cancellationToken
+        );
 
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, CancellationToken.None);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, CancellationToken.None);
         await using (await @lock.WriterLockAsync(cancellationToken: CancellationToken.None))
         {
             state.InitNew();
         }
     }
 
-    public override async Task DeleteAsync(string engineId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string engineId, CancellationToken cancellationToken = default)
     {
-        await base.DeleteAsync(engineId, cancellationToken);
+        await _dataAccessContext.BeginTransactionAsync(cancellationToken);
+        await _engines.DeleteAsync(e => e.EngineId == engineId, cancellationToken);
+        await _lockFactory.DeleteAsync(engineId, cancellationToken);
+        await _dataAccessContext.CommitTransactionAsync(CancellationToken.None);
+
         if (_stateService.TryRemove(engineId, out SmtTransferEngineState? state))
         {
-            IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, CancellationToken.None);
+            IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, CancellationToken.None);
             await using (await @lock.WriterLockAsync(cancellationToken: CancellationToken.None))
             {
                 // ensure that there is no build running before unloading
@@ -59,7 +80,7 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         }
     }
 
-    public override async Task<IReadOnlyList<TranslationResult>> TranslateAsync(
+    public async Task<IReadOnlyList<TranslationResult>> TranslateAsync(
         string engineId,
         int n,
         string segment,
@@ -67,7 +88,7 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
     )
     {
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, cancellationToken);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, cancellationToken);
         await using (await @lock.ReaderLockAsync(cancellationToken: cancellationToken))
         {
             TranslationEngine engine = await GetBuiltEngineAsync(engineId, cancellationToken);
@@ -78,14 +99,14 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         }
     }
 
-    public override async Task<WordGraph> GetWordGraphAsync(
+    public async Task<WordGraph> GetWordGraphAsync(
         string engineId,
         string segment,
         CancellationToken cancellationToken = default
     )
     {
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, cancellationToken);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, cancellationToken);
         await using (await @lock.ReaderLockAsync(cancellationToken: cancellationToken))
         {
             TranslationEngine engine = await GetBuiltEngineAsync(engineId, cancellationToken);
@@ -96,7 +117,7 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         }
     }
 
-    public override async Task TrainSegmentPairAsync(
+    public async Task TrainSegmentPairAsync(
         string engineId,
         string sourceSegment,
         string targetSegment,
@@ -105,13 +126,13 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
     )
     {
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, cancellationToken);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, cancellationToken);
         await using (await @lock.WriterLockAsync(cancellationToken: cancellationToken))
         {
             TranslationEngine engine = await GetEngineAsync(engineId, cancellationToken);
             if (engine.BuildState is BuildState.Active)
             {
-                await DataAccessContext.BeginTransactionAsync(cancellationToken);
+                await _dataAccessContext.BeginTransactionAsync(cancellationToken);
                 await _trainSegmentPairs.InsertAsync(
                     new TrainSegmentPair
                     {
@@ -126,15 +147,15 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
 
             HybridTranslationEngine hybridEngine = await state.GetHybridEngineAsync(engine.BuildRevision);
             await hybridEngine.TrainSegmentAsync(sourceSegment, targetSegment, sentenceStart, cancellationToken);
-            await PlatformService.IncrementTrainSizeAsync(engineId, cancellationToken: CancellationToken.None);
+            await _platformService.IncrementTrainSizeAsync(engineId, cancellationToken: CancellationToken.None);
             if (engine.BuildState is BuildState.Active)
-                await DataAccessContext.CommitTransactionAsync(CancellationToken.None);
+                await _dataAccessContext.CommitTransactionAsync(CancellationToken.None);
             state.IsUpdated = true;
             state.LastUsedTime = DateTime.Now;
         }
     }
 
-    public override async Task StartBuildAsync(
+    public async Task StartBuildAsync(
         string engineId,
         string buildId,
         IReadOnlyList<Corpus> corpora,
@@ -142,18 +163,53 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
     )
     {
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, cancellationToken);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, cancellationToken);
         await using (await @lock.WriterLockAsync(cancellationToken: cancellationToken))
         {
-            await StartBuildInternalAsync(engineId, buildId, corpora, cancellationToken);
+            // If there is a pending job, then no need to start a new one.
+            if (
+                await _engines.ExistsAsync(
+                    e =>
+                        e.EngineId == engineId
+                        && (e.BuildState == BuildState.Pending || e.BuildState == BuildState.Active),
+                    cancellationToken
+                )
+            )
+                throw new InvalidOperationException("Engine is already building or pending.");
+
+            // Schedule the job to occur way in the future, just so we can get the job id.
+            // Token "None" is used here because hangfire injects the proper cancellation token
+            string jobId = _jobClient.Schedule<SmtTransferEngineBuildJob>(
+                r => r.RunAsync(engineId, buildId, corpora, CancellationToken.None),
+                TimeSpan.FromDays(10000)
+            );
+            try
+            {
+                await _engines.UpdateAsync(
+                    e => e.EngineId == engineId,
+                    u =>
+                        u.Set(e => e.BuildState, BuildState.Pending)
+                            .Set(e => e.IsCanceled, false)
+                            .Set(e => e.JobId, jobId)
+                            .Set(e => e.BuildId, buildId),
+                    cancellationToken: CancellationToken.None
+                );
+                // Enqueue the job now that the build has been created.
+                _jobClient.Requeue(jobId);
+            }
+            catch
+            {
+                _jobClient.Delete(jobId);
+                throw;
+            }
             state.LastUsedTime = DateTime.UtcNow;
         }
     }
 
-    public override async Task CancelBuildAsync(string engineId, CancellationToken cancellationToken = default)
+    public async Task CancelBuildAsync(string engineId, CancellationToken cancellationToken = default)
     {
         SmtTransferEngineState state = _stateService.Get(engineId);
-        IDistributedReaderWriterLock @lock = await LockFactory.CreateAsync(engineId, cancellationToken);
+        IDistributedReaderWriterLock @lock = await _lockFactory.CreateAsync(engineId, cancellationToken);
         await using (await @lock.WriterLockAsync(cancellationToken: cancellationToken))
         {
             await CancelBuildInternalAsync(engineId, cancellationToken);
@@ -161,13 +217,101 @@ public class SmtTransferEngineService : TranslationEngineServiceBase<SmtTransfer
         }
     }
 
-    protected override Expression<Func<SmtTransferEngineBuildJob, Task>> GetJobExpression(
+    private async Task<string?> CancelBuildInternalAsync(string engineId, CancellationToken cancellationToken)
+    {
+        await _dataAccessContext.BeginTransactionAsync(cancellationToken);
+        // First, try to cancel a job that hasn't started yet
+        TranslationEngine? engine = await _engines.UpdateAsync(
+            e => e.EngineId == engineId && e.BuildState == BuildState.Pending,
+            u => u.Set(b => b.BuildState, BuildState.None).Set(e => e.IsCanceled, true),
+            cancellationToken: cancellationToken
+        );
+        if (engine is not null && engine.BuildId is not null)
+        {
+            // job will be deleted from the queue
+            _jobClient.Delete(engine.JobId);
+            await _platformService.BuildCanceledAsync(engine.BuildId, CancellationToken.None);
+        }
+        else
+        {
+            // Second, try to cancel a job that is already running
+            engine = await _engines.UpdateAsync(
+                e => e.EngineId == engineId && e.BuildState == BuildState.Active,
+                u => u.Set(b => b.IsCanceled, true),
+                cancellationToken: cancellationToken
+            );
+            if (engine is not null)
+            {
+                // Trigger the cancellation token for the job
+                _jobClient.Delete(engine.JobId);
+            }
+        }
+        await _dataAccessContext.CommitTransactionAsync(CancellationToken.None);
+        return engine?.BuildId;
+    }
+
+    private async Task<bool> WaitForBuildToFinishAsync(
         string engineId,
         string buildId,
-        IReadOnlyList<Corpus> corpora
+        CancellationToken cancellationToken
     )
     {
-        // Token "None" is used here because hangfire injects the proper cancellation token
-        return r => r.RunAsync(engineId, buildId, corpora, CancellationToken.None);
+        using ISubscription<TranslationEngine> sub = await _engines.SubscribeAsync(
+            e => e.EngineId == engineId && e.BuildId == buildId,
+            cancellationToken
+        );
+        if (sub.Change.Entity is null)
+            return true;
+
+        var timeout = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (DateTime.UtcNow < timeout)
+        {
+            await sub.WaitForChangeAsync(TimeSpan.FromSeconds(2), cancellationToken);
+            TranslationEngine? engine = sub.Change.Entity;
+            if (engine is null || engine.BuildState is BuildState.None)
+                return true;
+        }
+        return false;
+    }
+
+    public Task<bool> BuildStartedAsync(string engineId, string buildId, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task BuildCompletedAsync(
+        string engineId,
+        string buildId,
+        int corpusSize,
+        double confidence,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task BuildFaultedAsync(
+        string engineId,
+        string buildId,
+        string message,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task BuildCanceledAsync(string engineId, string buildId, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task UpdateBuildStatus(
+        string engineId,
+        string buildId,
+        ProgressStatus progressStatus,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
     }
 }

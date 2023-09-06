@@ -47,7 +47,7 @@ public class ClearMLNmtEngineServiceTests
         await env.WaitForBuildToFinishAsync();
         engine = env.Engines.Get("engine1");
         Assert.That(engine.BuildState, Is.EqualTo(BuildState.None));
-        await env.ClearMLService.Received().StopTaskAsync("task1", Arg.Any<CancellationToken>());
+        await env.ClearMLService.Received().StopJobAsync("task1", Arg.Any<CancellationToken>());
     }
 
     private class TestEnvironment : DisposableBase
@@ -75,7 +75,7 @@ public class ClearMLNmtEngineServiceTests
             _memoryStorage = new MemoryStorage();
             _jobClient = new BackgroundJobClient(_memoryStorage);
             PlatformService = Substitute.For<IPlatformService>();
-            ClearMLService = Substitute.For<IClearMLService>();
+            ClearMLService = Substitute.For<INmtJobService>();
             ClearMLService
                 .GetProjectIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<string?>("project1"));
@@ -93,11 +93,11 @@ public class ClearMLNmtEngineServiceTests
             Service = CreateService();
         }
 
-        public ClearMLNmtEngineService Service { get; private set; }
+        public NmtEngineService Service { get; private set; }
         public MemoryRepository<TranslationEngine> Engines { get; }
         public SmtTransferEngineOptions EngineOptions { get; }
         public IPlatformService PlatformService { get; }
-        public IClearMLService ClearMLService { get; }
+        public INmtJobService ClearMLService { get; }
 
         public void StopServer()
         {
@@ -121,7 +121,7 @@ public class ClearMLNmtEngineServiceTests
             return new BackgroundJobServer(jobServerOptions, _memoryStorage);
         }
 
-        private ClearMLNmtEngineService CreateService()
+        private NmtEngineService CreateService()
         {
             return new ClearMLNmtEngineService(
                 _jobClient,
@@ -173,12 +173,12 @@ public class ClearMLNmtEngineServiceTests
 
             public override object ActivateJob(Type jobType)
             {
-                if (jobType == typeof(ClearMLNmtEngineBuildJob))
+                if (jobType == typeof(NmtEnginePipeline))
                 {
-                    return new ClearMLNmtEngineBuildJob(
+                    return new NmtEnginePipeline(
                         _env.PlatformService,
                         _env.Engines,
-                        Substitute.For<ILogger<ClearMLNmtEngineBuildJob>>(),
+                        Substitute.For<ILogger<NmtEnginePipeline>>(),
                         _env.ClearMLService,
                         _env._sharedFileService,
                         _env._options,

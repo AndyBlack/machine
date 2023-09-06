@@ -1,8 +1,8 @@
 public class ClearMLHealthCheck : IHealthCheck
 {
-    private readonly IClearMLService _clearMLService;
+    private readonly INmtJobService _clearMLService;
 
-    public ClearMLHealthCheck(IClearMLService clearMLService)
+    public ClearMLHealthCheck(INmtJobService clearMLService, ILoggerFactory loggerFactory)
     {
         _clearMLService = clearMLService;
     }

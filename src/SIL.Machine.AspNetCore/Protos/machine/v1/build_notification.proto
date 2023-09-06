@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package machine.v1;
+
+import "google/protobuf/empty.proto";
+
+service BuildNotificationApi {
+    rpc UpdateStatus(UpdateStatusRequest) returns (google.protobuf.Empty);
+    rpc Started(StartedRequest) returns (StartedResponse);
+    rpc Completed(CompletedRequest) returns (google.protobuf.Empty);
+    rpc Canceled(CanceledRequest) returns (google.protobuf.Empty);
+    rpc Faulted(FaultedRequest) returns (google.protobuf.Empty);
+}
+
+message UpdateStatusRequest {
+    string engine_type = 1;
+    string engine_id = 2;
+    string build_id = 3;
+    int32 step = 4;
+    optional double percent_completed = 5;
+    optional string message = 6;
+}
+
+message StartedRequest {
+    string engine_type = 1;
+    string engine_id = 2;
+    string build_id = 3;
+}
+
+message StartedResponse {
+    bool canceled = 1;
+}
+
+message CompletedRequest {
+    string engine_type = 1;
+    string engine_id = 2;
+    string build_id = 3;
+    int32 corpus_size = 4;
+    double confidence = 5;
+}
+
+message CanceledRequest {
+    string engine_type = 1;
+    string engine_id = 2;
+    string build_id = 3;
+}
+
+message FaultedRequest {
+    string engine_type = 1;
+    string engine_id = 2;
+    string build_id = 3;
+    string message = 4;
+}

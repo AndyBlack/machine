@@ -29,10 +29,10 @@ public class ClearMLServiceTests
         );
         var authService = Substitute.For<IClearMLAuthenticationService>();
         authService.GetAuthTokenAsync().Returns(Task.FromResult("accessToken"));
-        var service = new ClearMLService(
+        var service = new ClearMLNmtJobService(
             mockHttp.ToHttpClient(),
             options,
-            Substitute.For<ILogger<ClearMLService>>(),
+            Substitute.For<ILogger<ClearMLNmtJobService>>(),
             authService
         );
 

@@ -48,6 +48,10 @@
 		<ProjectReference Include="..\..\..\serval\src\SIL.DataAccess\SIL.DataAccess.csproj" Condition="Exists('..\..\..\serval\src\SIL.DataAccess\SIL.DataAccess.csproj')" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<Protobuf Include="Protos\**\*.proto" />
+	</ItemGroup>
+
 	<Target Name="ZipThotNewModel" BeforeTargets="BeforeBuild">
 		<ZipDirectory SourceDirectory="data\thot-new-model" DestinationFile="thot-new-model.zip" Overwrite="true" />
 	</Target>

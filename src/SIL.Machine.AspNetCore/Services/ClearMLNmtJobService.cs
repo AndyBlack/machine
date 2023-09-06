@@ -1,10 +1,10 @@
 ﻿namespace SIL.Machine.AspNetCore.Services;
 
-public class ClearMLService : IClearMLService
+public class ClearMLNmtJobService : INmtJobService
 {
     private readonly HttpClient _httpClient;
     private readonly IOptionsMonitor<ClearMLNmtEngineOptions> _options;
-    private readonly ILogger<ClearMLService> _logger;
+    private readonly ILogger<ClearMLNmtJobService> _logger;
     private static readonly JsonNamingPolicy JsonNamingPolicy = new SnakeCaseJsonNamingPolicy();
     private static readonly JsonSerializerOptions JsonSerializerOptions =
         new()
@@ -15,10 +15,10 @@ public class ClearMLService : IClearMLService
 
     private IClearMLAuthenticationService _clearMLAuthService;
 
-    public ClearMLService(
+    public ClearMLNmtJobService(
         HttpClient httpClient,
         IOptionsMonitor<ClearMLNmtEngineOptions> options,
-        ILogger<ClearMLService> logger,
+        ILogger<ClearMLNmtJobService> logger,
         IClearMLAuthenticationService clearMLAuthService
     )
     {
@@ -29,7 +29,72 @@ public class ClearMLService : IClearMLService
         Sldr.Initialize();
     }
 
-    public async Task<string?> GetProjectIdAsync(string name, CancellationToken cancellationToken = default)
+    public async Task CreateEngineAsync(
+        string engineId,
+        string? name = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await CreateProjectAsync(engineId, name, cancellationToken);
+    }
+
+    public async Task DeleteEngineAsync(string engineId, CancellationToken cancellationToken = default)
+    {
+        string? projectId = await GetProjectIdAsync(engineId, cancellationToken);
+        if (projectId is not null)
+            await DeleteProjectAsync(projectId, cancellationToken);
+    }
+
+    public async Task<string> CreateJobAsync(
+        string buildId,
+        string engineId,
+        string sourceLanguageTag,
+        string targetLanguageTag,
+        string sharedFileUri,
+        CancellationToken cancellationToken = default
+    )
+    {
+        string? projectId = await GetProjectIdAsync(engineId, cancellationToken);
+        if (projectId is null)
+            throw new InvalidOperationException("The project does not exist.");
+
+        string taskId;
+        ClearMLTask? task = await GetTaskByNameAsync(buildId, cancellationToken);
+        if (task is null)
+        {
+            taskId = await CreateTaskAsync(
+                buildId,
+                projectId,
+                engineId,
+                sourceLanguageTag,
+                targetLanguageTag,
+                sharedFileUri,
+                cancellationToken
+            );
+        }
+        else
+        {
+            taskId = task.Id;
+        }
+        return taskId;
+    }
+
+    public Task<bool> DeleteJobAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        return DeleteTaskAsync(jobId, cancellationToken);
+    }
+
+    public Task<bool> EnqueueJobAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        return EnqueueTaskAsync(jobId, cancellationToken);
+    }
+
+    public Task<bool> StopJobAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        return StopTaskAsync(jobId, cancellationToken);
+    }
+
+    private async Task<string?> GetProjectIdAsync(string name, CancellationToken cancellationToken = default)
     {
         var body = new JsonObject
         {
@@ -45,7 +110,7 @@ public class ClearMLService : IClearMLService
         return (string?)projects[0]?["id"];
     }
 
-    public async Task<string> CreateProjectAsync(
+    private async Task<string> CreateProjectAsync(
         string name,
         string? description = null,
         CancellationToken cancellationToken = default
@@ -61,7 +126,7 @@ public class ClearMLService : IClearMLService
         return projectId;
     }
 
-    public async Task<bool> DeleteProjectAsync(string id, CancellationToken cancellationToken = default)
+    private async Task<bool> DeleteProjectAsync(string id, CancellationToken cancellationToken = default)
     {
         var body = new JsonObject
         {
@@ -76,7 +141,7 @@ public class ClearMLService : IClearMLService
         return deleted == 1;
     }
 
-    public async Task<string> CreateTaskAsync(
+    private async Task<string> CreateTaskAsync(
         string buildId,
         string projectId,
         string engineId,
@@ -115,7 +180,17 @@ public class ClearMLService : IClearMLService
         return taskId;
     }
 
-    public async Task<bool> EnqueueTaskAsync(string id, CancellationToken cancellationToken = default)
+    private async Task<bool> DeleteTaskAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var body = new JsonObject { ["task"] = id };
+        JsonObject? result = await CallAsync("tasks", "delete", body, cancellationToken);
+        var deleted = (int?)result?["data"]?["deleted"];
+        if (deleted is null)
+            throw new InvalidOperationException("Malformed response from ClearML server.");
+        return deleted == 1;
+    }
+
+    private async Task<bool> EnqueueTaskAsync(string id, CancellationToken cancellationToken = default)
     {
         var body = new JsonObject { ["task"] = id, ["queue_name"] = _options.CurrentValue.Queue };
         JsonObject? result = await CallAsync("tasks", "enqueue", body, cancellationToken);
@@ -125,7 +200,7 @@ public class ClearMLService : IClearMLService
         return queued == 1;
     }
 
-    public async Task<bool> DequeueTaskAsync(string id, CancellationToken cancellationToken = default)
+    private async Task<bool> DequeueTaskAsync(string id, CancellationToken cancellationToken = default)
     {
         var body = new JsonObject { ["task"] = id };
         JsonObject? result = await CallAsync("tasks", "dequeue", body, cancellationToken);
@@ -135,7 +210,7 @@ public class ClearMLService : IClearMLService
         return dequeued == 1;
     }
 
-    public async Task<bool> StopTaskAsync(string id, CancellationToken cancellationToken = default)
+    private async Task<bool> StopTaskAsync(string id, CancellationToken cancellationToken = default)
     {
         var body = new JsonObject { ["task"] = id, ["force"] = true };
         JsonObject? result = await CallAsync("tasks", "stop", body, cancellationToken);

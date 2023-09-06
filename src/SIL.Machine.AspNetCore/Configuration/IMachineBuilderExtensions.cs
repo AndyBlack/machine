@@ -100,7 +100,7 @@ public static class IMachineBuilderExtensions
 
     public static IMachineBuilder AddClearMLService(this IMachineBuilder builder)
     {
-        builder.Services.AddSingleton<IClearMLService, ClearMLService>();
+        builder.Services.AddSingleton<INmtJobService, ClearMLNmtJobService>();
         builder.Services.AddHealthChecks().AddCheck<ClearMLHealthCheck>("ClearML Health Check");
 
         // workaround register satisfying the interface and as a hosted service.
@@ -306,7 +306,7 @@ public static class IMachineBuilderExtensions
                     break;
                 case TranslationEngineType.Nmt:
                     builder.AddClearMLService();
-                    builder.Services.AddScoped<ITranslationEngineService, ClearMLNmtEngineService>();
+                    builder.Services.AddScoped<ITranslationEngineService, NmtEngineService>();
                     break;
             }
         }

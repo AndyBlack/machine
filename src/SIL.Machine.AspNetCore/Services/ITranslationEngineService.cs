@@ -38,4 +38,30 @@ public interface ITranslationEngineService
     );
 
     Task CancelBuildAsync(string engineId, CancellationToken cancellationToken = default);
+
+    Task<bool> BuildStartedAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
+
+    Task BuildCompletedAsync(
+        string engineId,
+        string buildId,
+        int corpusSize,
+        double confidence,
+        CancellationToken cancellationToken = default
+    );
+
+    Task BuildFaultedAsync(
+        string engineId,
+        string buildId,
+        string message,
+        CancellationToken cancellationToken = default
+    );
+
+    Task BuildCanceledAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
+
+    Task UpdateBuildStatus(
+        string engineId,
+        string buildId,
+        ProgressStatus progressStatus,
+        CancellationToken cancellationToken = default
+    );
 }
