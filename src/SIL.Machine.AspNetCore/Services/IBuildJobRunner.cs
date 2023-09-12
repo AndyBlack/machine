@@ -1,16 +1,24 @@
 ﻿namespace SIL.Machine.AspNetCore.Services;
 
-public interface INmtJobService
+public enum BuildJobRunnerType
 {
+    Hangfire,
+    ClearML
+}
+
+public interface IBuildJobRunner
+{
+    BuildJobRunnerType Type { get; }
+
     Task CreateEngineAsync(string engineId, string? name = null, CancellationToken cancellationToken = default);
     Task DeleteEngineAsync(string engineId, CancellationToken cancellationToken = default);
 
     Task<string> CreateJobAsync(
-        string buildId,
+        TranslationEngineType engineType,
         string engineId,
-        string sourceLanguageTag,
-        string targetLanguageTag,
-        string sharedFileUri,
+        string buildId,
+        string stage,
+        object? data = null,
         CancellationToken cancellationToken = default
     );
 

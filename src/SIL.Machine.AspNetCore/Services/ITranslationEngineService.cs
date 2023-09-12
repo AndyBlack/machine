@@ -39,9 +39,9 @@ public interface ITranslationEngineService
 
     Task CancelBuildAsync(string engineId, CancellationToken cancellationToken = default);
 
-    Task<bool> BuildStartedAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
+    Task<bool> BuildJobStartedAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
 
-    Task BuildCompletedAsync(
+    Task BuildJobCompletedAsync(
         string engineId,
         string buildId,
         int corpusSize,
@@ -49,16 +49,16 @@ public interface ITranslationEngineService
         CancellationToken cancellationToken = default
     );
 
-    Task BuildFaultedAsync(
+    Task BuildJobFaultedAsync(
         string engineId,
         string buildId,
         string message,
         CancellationToken cancellationToken = default
     );
 
-    Task BuildCanceledAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
+    Task BuildJobCanceledAsync(string engineId, string buildId, CancellationToken cancellationToken = default);
 
-    Task UpdateBuildStatus(
+    Task UpdateBuildJobStatus(
         string engineId,
         string buildId,
         ProgressStatus progressStatus,

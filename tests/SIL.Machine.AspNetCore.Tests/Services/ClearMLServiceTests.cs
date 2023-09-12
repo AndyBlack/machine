@@ -18,9 +18,9 @@ public class ClearMLServiceTests
             .WithPartialContent("\\u0027trg_lang\\u0027: \\u0027eng_Latn\\u0027")
             .Respond("application/json", "{ \"data\": { \"id\": \"projectId\" } }");
 
-        var options = Substitute.For<IOptionsMonitor<ClearMLNmtEngineOptions>>();
+        var options = Substitute.For<IOptionsMonitor<ClearMLOptions>>();
         options.CurrentValue.Returns(
-            new ClearMLNmtEngineOptions
+            new ClearMLOptions
             {
                 ApiServer = ApiServier,
                 AccessKey = AccessKey,
@@ -29,10 +29,10 @@ public class ClearMLServiceTests
         );
         var authService = Substitute.For<IClearMLAuthenticationService>();
         authService.GetAuthTokenAsync().Returns(Task.FromResult("accessToken"));
-        var service = new ClearMLNmtJobService(
+        var service = new ClearMLBuildJobQueue(
             mockHttp.ToHttpClient(),
             options,
-            Substitute.For<ILogger<ClearMLNmtJobService>>(),
+            Substitute.For<ILogger<ClearMLBuildJobRunner>>(),
             authService
         );
 

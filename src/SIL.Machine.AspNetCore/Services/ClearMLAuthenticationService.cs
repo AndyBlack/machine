@@ -3,7 +3,7 @@
 public class ClearMLAuthenticationService : BackgroundService, IClearMLAuthenticationService
 {
     private readonly HttpClient _httpClient;
-    private readonly IOptionsMonitor<ClearMLNmtEngineOptions> _options;
+    private readonly IOptionsMonitor<ClearMLOptions> _options;
     private readonly ILogger<ClearMLAuthenticationService> _logger;
     private readonly AsyncLock _lock = new();
 
@@ -14,7 +14,7 @@ public class ClearMLAuthenticationService : BackgroundService, IClearMLAuthentic
 
     public ClearMLAuthenticationService(
         HttpClient httpClient,
-        IOptionsMonitor<ClearMLNmtEngineOptions> options,
+        IOptionsMonitor<ClearMLOptions> options,
         ILogger<ClearMLAuthenticationService> logger
     )
     {

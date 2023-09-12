@@ -4,7 +4,7 @@ package machine.v1;
 
 import "google/protobuf/empty.proto";
 
-service BuildNotificationApi {
+service BuildJobNotificationApi {
     rpc UpdateStatus(UpdateStatusRequest) returns (google.protobuf.Empty);
     rpc Started(StartedRequest) returns (StartedResponse);
     rpc Completed(CompletedRequest) returns (google.protobuf.Empty);

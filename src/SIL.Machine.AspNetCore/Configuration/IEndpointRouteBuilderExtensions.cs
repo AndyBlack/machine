@@ -8,4 +8,11 @@ public static class IEndpointRouteBuilderExtensions
 
         return builder;
     }
+
+    public static IEndpointRouteBuilder MapBuildJobNotificationService(this IEndpointRouteBuilder builder)
+    {
+        builder.MapGrpcService<BuildJobNotificationServiceV1>();
+
+        return builder;
+    }
 }

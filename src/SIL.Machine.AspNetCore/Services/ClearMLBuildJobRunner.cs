@@ -1,10 +1,9 @@
 ﻿namespace SIL.Machine.AspNetCore.Services;
 
-public class ClearMLNmtJobService : INmtJobService
+public class ClearMLBuildJobRunner : IBuildJobRunner
 {
     private readonly HttpClient _httpClient;
-    private readonly IOptionsMonitor<ClearMLNmtEngineOptions> _options;
-    private readonly ILogger<ClearMLNmtJobService> _logger;
+    private readonly IOptionsMonitor<ClearMLOptions> _options;
     private static readonly JsonNamingPolicy JsonNamingPolicy = new SnakeCaseJsonNamingPolicy();
     private static readonly JsonSerializerOptions JsonSerializerOptions =
         new()
@@ -13,21 +12,23 @@ public class ClearMLNmtJobService : INmtJobService
             Converters = { new CustomEnumConverterFactory(JsonNamingPolicy) }
         };
 
-    private IClearMLAuthenticationService _clearMLAuthService;
+    private readonly IClearMLAuthenticationService _clearMLAuthService;
+    private readonly Dictionary<TranslationEngineType, IClearMLBuildJobFactory> _buildJobFactories;
 
-    public ClearMLNmtJobService(
+    public ClearMLBuildJobRunner(
         HttpClient httpClient,
-        IOptionsMonitor<ClearMLNmtEngineOptions> options,
-        ILogger<ClearMLNmtJobService> logger,
-        IClearMLAuthenticationService clearMLAuthService
+        IOptionsMonitor<ClearMLOptions> options,
+        IClearMLAuthenticationService clearMLAuthService,
+        IEnumerable<IClearMLBuildJobFactory> buildJobFactories
     )
     {
         _httpClient = httpClient;
         _options = options;
-        _logger = logger;
         _clearMLAuthService = clearMLAuthService;
-        Sldr.Initialize();
+        _buildJobFactories = buildJobFactories.ToDictionary(f => f.EngineType);
     }
+
+    public BuildJobRunnerType Type => BuildJobRunnerType.ClearML;
 
     public async Task CreateEngineAsync(
         string engineId,
@@ -46,11 +47,11 @@ public class ClearMLNmtJobService : INmtJobService
     }
 
     public async Task<string> CreateJobAsync(
-        string buildId,
+        TranslationEngineType engineType,
         string engineId,
-        string sourceLanguageTag,
-        string targetLanguageTag,
-        string sharedFileUri,
+        string buildId,
+        string stage,
+        object? data = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -58,25 +59,13 @@ public class ClearMLNmtJobService : INmtJobService
         if (projectId is null)
             throw new InvalidOperationException("The project does not exist.");
 
-        string taskId;
         ClearMLTask? task = await GetTaskByNameAsync(buildId, cancellationToken);
-        if (task is null)
-        {
-            taskId = await CreateTaskAsync(
-                buildId,
-                projectId,
-                engineId,
-                sourceLanguageTag,
-                targetLanguageTag,
-                sharedFileUri,
-                cancellationToken
-            );
-        }
-        else
-        {
-            taskId = task.Id;
-        }
-        return taskId;
+        if (task is not null)
+            return task.Id;
+
+        IClearMLBuildJobFactory buildJobFactory = _buildJobFactories[engineType];
+        string script = await buildJobFactory.CreateJobScriptAsync(engineId, buildId, stage, data, cancellationToken);
+        return await CreateTaskAsync(buildId, projectId, script, cancellationToken);
     }
 
     public Task<bool> DeleteJobAsync(string jobId, CancellationToken cancellationToken = default)
@@ -144,27 +133,10 @@ public class ClearMLNmtJobService : INmtJobService
     private async Task<string> CreateTaskAsync(
         string buildId,
         string projectId,
-        string engineId,
-        string sourceLanguageTag,
-        string targetLanguageTag,
-        string sharedFileUri,
+        string script,
         CancellationToken cancellationToken = default
     )
     {
-        string script =
-            "from machine.jobs.build_nmt_engine import run\n"
-            + "args = {\n"
-            + $"    'model_type': '{_options.CurrentValue.ModelType}',\n"
-            + $"    'engine_id': '{engineId}',\n"
-            + $"    'build_id': '{buildId}',\n"
-            + $"    'src_lang': '{ConvertLanguageTag(sourceLanguageTag)}',\n"
-            + $"    'trg_lang': '{ConvertLanguageTag(targetLanguageTag)}',\n"
-            + $"    'max_steps': {_options.CurrentValue.MaxSteps},\n"
-            + $"    'shared_file_uri': '{sharedFileUri}',\n"
-            + $"    'clearml': True\n"
-            + "}\n"
-            + "run(args)\n";
-
         var body = new JsonObject
         {
             ["name"] = buildId,
@@ -198,16 +170,6 @@ public class ClearMLNmtJobService : INmtJobService
         if (queued is null)
             throw new InvalidOperationException("Malformed response from ClearML server.");
         return queued == 1;
-    }
-
-    private async Task<bool> DequeueTaskAsync(string id, CancellationToken cancellationToken = default)
-    {
-        var body = new JsonObject { ["task"] = id };
-        JsonObject? result = await CallAsync("tasks", "dequeue", body, cancellationToken);
-        var dequeued = (int?)result?["data"]?["dequeued"];
-        if (dequeued is null)
-            throw new InvalidOperationException("Malformed response from ClearML server.");
-        return dequeued == 1;
     }
 
     private async Task<bool> StopTaskAsync(string id, CancellationToken cancellationToken = default)
@@ -323,23 +285,6 @@ public class ClearMLNmtJobService : INmtJobService
         HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
         string result = await response.Content.ReadAsStringAsync(cancellationToken);
         return (JsonObject?)JsonNode.Parse(result);
-    }
-
-    private static string ConvertLanguageTag(string languageTag)
-    {
-        if (
-            !IetfLanguageTag.TryGetSubtags(
-                languageTag,
-                out LanguageSubtag languageSubtag,
-                out ScriptSubtag scriptSubtag,
-                out _,
-                out _
-            )
-        )
-            return languageTag;
-
-        // Convert to NLLB language codes
-        return $"{languageSubtag.Iso3Code}_{scriptSubtag.Code}";
     }
 
     private class SnakeCaseJsonNamingPolicy : JsonNamingPolicy

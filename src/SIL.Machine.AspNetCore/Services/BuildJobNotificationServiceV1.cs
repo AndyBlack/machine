@@ -3,13 +3,13 @@ using Machine.V1;
 
 namespace SIL.Machine.AspNetCore.Services;
 
-public class BuildNotificationServiceV1 : BuildNotificationApi.BuildNotificationApiBase
+public class BuildJobNotificationServiceV1 : BuildJobNotificationApi.BuildJobNotificationApiBase
 {
     private static readonly Empty Empty = new();
 
     private readonly Dictionary<TranslationEngineType, ITranslationEngineService> _engineServices;
 
-    public BuildNotificationServiceV1(IEnumerable<ITranslationEngineService> engineServices)
+    public BuildJobNotificationServiceV1(IEnumerable<ITranslationEngineService> engineServices)
     {
         _engineServices = engineServices.ToDictionary(es => es.Type);
     }
@@ -17,7 +17,7 @@ public class BuildNotificationServiceV1 : BuildNotificationApi.BuildNotification
     public override async Task<StartedResponse> Started(StartedRequest request, ServerCallContext context)
     {
         ITranslationEngineService engineService = GetEngineService(request.EngineType);
-        bool canceled = !await engineService.BuildStartedAsync(
+        bool canceled = !await engineService.BuildJobStartedAsync(
             request.EngineId,
             request.BuildId,
             context.CancellationToken
@@ -28,7 +28,7 @@ public class BuildNotificationServiceV1 : BuildNotificationApi.BuildNotification
     public override async Task<Empty> Completed(CompletedRequest request, ServerCallContext context)
     {
         ITranslationEngineService engineService = GetEngineService(request.EngineType);
-        await engineService.BuildCompletedAsync(
+        await engineService.BuildJobCompletedAsync(
             request.EngineId,
             request.BuildId,
             request.CorpusSize,
@@ -41,14 +41,14 @@ public class BuildNotificationServiceV1 : BuildNotificationApi.BuildNotification
     public override async Task<Empty> Canceled(CanceledRequest request, ServerCallContext context)
     {
         ITranslationEngineService engineService = GetEngineService(request.EngineType);
-        await engineService.BuildCanceledAsync(request.EngineId, request.BuildId, context.CancellationToken);
+        await engineService.BuildJobCanceledAsync(request.EngineId, request.BuildId, context.CancellationToken);
         return Empty;
     }
 
     public override async Task<Empty> Faulted(FaultedRequest request, ServerCallContext context)
     {
         ITranslationEngineService engineService = GetEngineService(request.EngineType);
-        await engineService.BuildFaultedAsync(
+        await engineService.BuildJobFaultedAsync(
             request.EngineId,
             request.BuildId,
             request.Message,
@@ -60,7 +60,7 @@ public class BuildNotificationServiceV1 : BuildNotificationApi.BuildNotification
     public override async Task<Empty> UpdateStatus(UpdateStatusRequest request, ServerCallContext context)
     {
         ITranslationEngineService engineService = GetEngineService(request.EngineType);
-        await engineService.UpdateBuildStatus(
+        await engineService.UpdateBuildJobStatus(
             request.EngineId,
             request.BuildId,
             new ProgressStatus(

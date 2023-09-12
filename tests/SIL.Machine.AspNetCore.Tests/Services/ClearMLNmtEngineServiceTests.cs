@@ -42,11 +42,11 @@ public class ClearMLNmtEngineServiceTests
         await env.Service.StartBuildAsync("engine1", "build1", Array.Empty<Corpus>());
         await env.WaitForBuildToStartAsync();
         TranslationEngine engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.Active));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.Active));
         await env.Service.CancelBuildAsync("engine1");
         await env.WaitForBuildToFinishAsync();
         engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.None));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.None));
         await env.ClearMLService.Received().StopJobAsync("task1", Arg.Any<CancellationToken>());
     }
 
@@ -57,7 +57,7 @@ public class ClearMLNmtEngineServiceTests
         private BackgroundJobServer _jobServer;
         private readonly IDistributedReaderWriterLockFactory _lockFactory;
         private readonly ISharedFileService _sharedFileService;
-        private readonly IOptionsMonitor<ClearMLNmtEngineOptions> _options;
+        private readonly IOptionsMonitor<ClearMLOptions> _options;
 
         public TestEnvironment()
         {
@@ -75,7 +75,7 @@ public class ClearMLNmtEngineServiceTests
             _memoryStorage = new MemoryStorage();
             _jobClient = new BackgroundJobClient(_memoryStorage);
             PlatformService = Substitute.For<IPlatformService>();
-            ClearMLService = Substitute.For<INmtJobService>();
+            ClearMLService = Substitute.For<IBuildJobRunner>();
             ClearMLService
                 .GetProjectIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<string?>("project1"));
@@ -85,9 +85,9 @@ public class ClearMLNmtEngineServiceTests
                 new ObjectIdGenerator()
             );
             _sharedFileService = new SharedFileService(Substitute.For<ILoggerFactory>());
-            _options = Substitute.For<IOptionsMonitor<ClearMLNmtEngineOptions>>();
+            _options = Substitute.For<IOptionsMonitor<ClearMLOptions>>();
             _options.CurrentValue.Returns(
-                new ClearMLNmtEngineOptions { BuildPollingTimeout = TimeSpan.FromMilliseconds(50) }
+                new ClearMLOptions { BuildPollingTimeout = TimeSpan.FromMilliseconds(50) }
             );
             _jobServer = CreateJobServer();
             Service = CreateService();
@@ -97,7 +97,7 @@ public class ClearMLNmtEngineServiceTests
         public MemoryRepository<TranslationEngine> Engines { get; }
         public SmtTransferEngineOptions EngineOptions { get; }
         public IPlatformService PlatformService { get; }
-        public INmtJobService ClearMLService { get; }
+        public IBuildJobRunner ClearMLService { get; }
 
         public void StopServer()
         {
@@ -135,12 +135,12 @@ public class ClearMLNmtEngineServiceTests
 
         public Task WaitForBuildToFinishAsync()
         {
-            return WaitForBuildState(e => e.BuildState is BuildState.None);
+            return WaitForBuildState(e => e.JobState is BuildJobState.None);
         }
 
         public Task WaitForBuildToStartAsync()
         {
-            return WaitForBuildState(e => e.BuildState is BuildState.Active);
+            return WaitForBuildState(e => e.JobState is BuildJobState.Active);
         }
 
         private async Task WaitForBuildState(Func<TranslationEngine, bool> predicate)

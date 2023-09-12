@@ -42,8 +42,13 @@ public class SmtTransferEngineStateService : AsyncDisposableBase
             await using (await @lock.WriterLockAsync())
             {
                 TranslationEngine? engine = await engines.GetAsync(e => e.EngineId == state.EngineId);
-                if (engine is not null && engine.BuildState is not BuildState.Active)
+                if (
+                    engine is not null
+                    && (engine.CurrentBuild is null || engine.CurrentBuild.JobState is BuildJobState.Pending)
+                )
+                {
                     await state.CommitAsync(engine.BuildRevision, inactiveTimeout);
+                }
             }
         }
     }

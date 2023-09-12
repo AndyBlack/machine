@@ -24,7 +24,7 @@ public class SmtTransferEngineServiceTests
         await env.SmtBatchTrainer.Received().SaveAsync(Arg.Any<CancellationToken>());
         await env.TruecaserTrainer.Received().SaveAsync(Arg.Any<CancellationToken>());
         engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.None));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.None));
         Assert.That(engine.BuildRevision, Is.EqualTo(2)); //For testing purposes BuildRevision was initially set to 1 (i.e., an already built engine), so now it ought to be 2
         // check if SMT model was reloaded upon first use after training
         env.SmtModel.ClearReceivedCalls();
@@ -49,13 +49,13 @@ public class SmtTransferEngineServiceTests
         await env.Service.StartBuildAsync("engine1", "build1", Array.Empty<Corpus>());
         await env.WaitForBuildToStartAsync();
         TranslationEngine engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.Active));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.Active));
         await env.Service.CancelBuildAsync("engine1");
         await env.WaitForBuildToFinishAsync();
         await env.SmtBatchTrainer.DidNotReceive().SaveAsync();
         await env.TruecaserTrainer.DidNotReceive().SaveAsync();
         engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.None));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.None));
     }
 
     [Test]
@@ -77,16 +77,16 @@ public class SmtTransferEngineServiceTests
         await env.Service.StartBuildAsync("engine1", "build1", Array.Empty<Corpus>());
         await env.WaitForBuildToStartAsync();
         TranslationEngine engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.Active));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.Active));
         env.StopServer();
         engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.Pending));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.Pending));
         await env.PlatformService.Received().BuildRestartingAsync("build1");
         env.SmtBatchTrainer.ClearSubstitute(ClearOptions.CallActions);
         env.StartServer();
         await env.WaitForBuildToFinishAsync();
         engine = env.Engines.Get("engine1");
-        Assert.That(engine.BuildState, Is.EqualTo(BuildState.None));
+        Assert.That(engine.JobState, Is.EqualTo(BuildJobState.None));
     }
 
     [Test]
@@ -378,12 +378,12 @@ public class SmtTransferEngineServiceTests
 
         public Task WaitForBuildToFinishAsync()
         {
-            return WaitForBuildState(e => e.BuildState is BuildState.None);
+            return WaitForBuildState(e => e.JobState is BuildJobState.None);
         }
 
         public Task WaitForBuildToStartAsync()
         {
-            return WaitForBuildState(e => e.BuildState is BuildState.Active);
+            return WaitForBuildState(e => e.JobState is BuildJobState.Active);
         }
 
         private async Task WaitForBuildState(Func<TranslationEngine, bool> predicate)
